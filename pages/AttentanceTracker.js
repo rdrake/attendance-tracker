@@ -5,7 +5,7 @@ import Script from "next/script";
 import Link from "next/link";
 import { BarcodeDetector } from "barcode-detector/ponyfill";
 
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
+const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
 
 export default function AttendanceTracker() {
     // --- UI State ---
