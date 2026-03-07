@@ -9,7 +9,7 @@ export default function TermsOfService() {
             <Head>
                 <title>OTU Attendance Tracker - Terms of Service</title>
                 <meta name="description" content="Terms of Service for OTU Attendance Tracker" />
-                <link rel="icon" href="/favicon.ico" />
+                <link rel="icon" href="favicon.ico" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
             </Head>
             <div className="layout-wrapper">

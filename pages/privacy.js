@@ -9,7 +9,7 @@ export default function PrivacyPolicy() {
             <Head>
                 <title>OTU Attendance Tracker - Privacy Policy</title>
                 <meta name="description" content="Privacy Policy for OTU Attendance Tracker" />
-                <link rel="icon" href="/favicon.ico" />
+                <link rel="icon" href="favicon.ico" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
             </Head>
             <div className="layout-wrapper">
