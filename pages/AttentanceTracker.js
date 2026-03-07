@@ -36,18 +36,24 @@ export default function AttendanceTracker() {
     const detectionCountRef = useRef({});
     const detectorRef = useRef(null);
 
-    useEffect(() => {
-        try {
-            detectorRef.current = new BarcodeDetector({ formats: ["code_39"] });
-        } catch (err) {
-            console.error("BarcodeDetector initialization failed:", err);
-        }
-    }, []);
-
     // ==========================================
     // GOOGLE API INITIALIZATION
     // ==========================================
-    const initGoogleApi = () => {
+    const fetchUserInfo = useCallback(async (token) => {
+        try {
+            const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const data = await res.json();
+            setUserInfo(data);
+            setStep(2);
+            fetchUserSheets();
+        } catch (err) {
+            setErrorMsg("Failed to fetch user info.");
+        }
+    }, []);
+
+    const initGoogleApi = useCallback(() => {
         setLoadingMsg("Initializing Google API...");
         try {
             window.gapi.load("client", async () => {
@@ -82,21 +88,7 @@ export default function AttendanceTracker() {
             setErrorMsg("Error loading Google API: " + err.message);
             setLoadingMsg(null);
         }
-    };
-
-    const fetchUserInfo = async (token) => {
-        try {
-            const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            const data = await res.json();
-            setUserInfo(data);
-            setStep(2);
-            fetchUserSheets();
-        } catch (err) {
-            setErrorMsg("Failed to fetch user info.");
-        }
-    };
+    }, [fetchUserInfo]);
 
     const handleAuthClick = () => {
         if (tokenClient) tokenClient.requestAccessToken();
@@ -381,6 +373,17 @@ export default function AttendanceTracker() {
         if (step === 3) startCamera();
         return () => stopCamera(); 
     }, [step, startCamera, stopCamera]);
+
+    useEffect(() => {
+        try {
+            detectorRef.current = new BarcodeDetector({ formats: ["code_39"] });
+            
+            if (window.gapi && window.google)
+                initGoogleApi();
+        } catch (err) {
+            console.error("BarcodeDetector initialization failed:", err);
+        }
+    }, [initGoogleApi]);
 
     // ==========================================
     // RENDER UI
