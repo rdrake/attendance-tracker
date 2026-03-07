@@ -12,7 +12,6 @@
   "dependencies": {
     "barcode-detector": "^3.1.0",
     "next": "16.1.6",
-    "quagga": "^0.12.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
