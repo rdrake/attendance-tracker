@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Script from "next/script";
+import Link from "next/link";
 import { BarcodeDetector } from "barcode-detector/ponyfill";
 
 const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
@@ -597,6 +598,17 @@ export default function AttendanceTracker() {
                     )}
                 </div>
             </main>
+            
+            <footer className="app-footer">
+                <div className="footer-content">
+                    <p>&copy; {new Date().getFullYear()} OTU Attendance</p>
+                    <div className="footer-links">
+                        {/* Make sure these paths match your file names (pages/privacy.js & pages/terms.js) */}
+                        <Link href="/privacy">Privacy Policy</Link>
+                        <Link href="/terms">Terms of Service</Link>
+                    </div>
+                </div>
+            </footer>
         </div>
     );
 }

@@ -2,32 +2,40 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 :root {
-  /* Color Palette: Soft Blue & Orange */
-  --primary: #3B82F6;       /* Soft Blue */
-  --primary-hover: #2563EB; /* Slightly darker blue for hover */
-  --primary-light: #DBEAFE; /* Very pale blue for backgrounds */
-  
-  --accent: #F97316;        /* Soft Orange */
-  --accent-hover: #EA580C;  /* Slightly darker orange for hover */
-  --accent-light: #FFEDD5;  /* Very pale orange */
-  
-  /* Keep standard semantic colors for status alerts */
-  --success: #10B981;
-  --success-light: #D1FAE5;
-  --error: #EF4444;
-  --error-light: #FEE2E2;
-  
-  --bg-color: #F8FAFC;      /* Slightly warmer light gray background */
-  --surface: #FFFFFF;
-  
-  --text-main: #1E293B;
-  --text-muted: #64748B;
-  --border: #E2E8F0;
-  
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(59, 130, 246, 0.1), 0 2px 4px -1px rgba(59, 130, 246, 0.06);
-  --shadow-lg: 0 10px 15px -3px rgba(59, 130, 246, 0.1), 0 4px 6px -2px rgba(59, 130, 246, 0.05);
+    /* Color Palette: Soft Blue & Orange */
+    --primary: #3B82F6;
+    /* Soft Blue */
+    --primary-hover: #2563EB;
+    /* Slightly darker blue for hover */
+    --primary-light: #DBEAFE;
+    /* Very pale blue for backgrounds */
+
+    --accent: #F97316;
+    /* Soft Orange */
+    --accent-hover: #EA580C;
+    /* Slightly darker orange for hover */
+    --accent-light: #FFEDD5;
+    /* Very pale orange */
+
+    /* Keep standard semantic colors for status alerts */
+    --success: #10B981;
+    --success-light: #D1FAE5;
+    --error: #EF4444;
+    --error-light: #FEE2E2;
+
+    --bg-color: #F8FAFC;
+    /* Slightly warmer light gray background */
+    --surface: #FFFFFF;
+
+    --text-main: #1E293B;
+    --text-muted: #64748B;
+    --border: #E2E8F0;
+
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(59, 130, 246, 0.1), 0 2px 4px -1px rgba(59, 130, 246, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(59, 130, 246, 0.1), 0 4px 6px -2px rgba(59, 130, 246, 0.05);
 }
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -345,71 +353,71 @@ button {
 }
 
 .btn-launch {
-  position: relative;
-  overflow: hidden;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  
-  /* Soft Orange Gradient */
-  background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
-  color: white;
-  border-radius: 12px;
-  border: none;
-  box-shadow: 0 4px 15px rgba(249, 115, 22, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  
-  font-weight: 600;
-  font-size: 1.05rem;
-  letter-spacing: 0.02em;
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  z-index: 1;
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+
+    /* Soft Orange Gradient */
+    background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
+    color: white;
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 4px 15px rgba(249, 115, 22, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+
+    font-weight: 600;
+    font-size: 1.05rem;
+    letter-spacing: 0.02em;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 1;
 }
 
 .btn-launch::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-  transform: skewX(-20deg);
-  transition: left 0.7s ease;
-  z-index: -1;
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+    transform: skewX(-20deg);
+    transition: left 0.7s ease;
+    z-index: -1;
 }
 
 .btn-launch:hover:not(:disabled) {
-  transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 8px 25px rgba(234, 88, 12, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(234, 88, 12, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
 }
 
 .btn-launch:hover:not(:disabled)::after {
-  left: 150%;
+    left: 150%;
 }
 
 .btn-launch:active:not(:disabled) {
-  transform: translateY(1px) scale(0.98);
-  box-shadow: 0 2px 10px rgba(249, 115, 22, 0.3);
+    transform: translateY(1px) scale(0.98);
+    box-shadow: 0 2px 10px rgba(249, 115, 22, 0.3);
 }
 
 .icon-launch {
-  width: 22px;
-  height: 22px;
-  transition: transform 0.3s ease;
+    width: 22px;
+    height: 22px;
+    transition: transform 0.3s ease;
 }
 
 .btn-launch:hover:not(:disabled) .icon-launch {
-  transform: scale(1.15) rotate(-3deg);
+    transform: scale(1.15) rotate(-3deg);
 }
 
 .btn-launch:disabled {
-  background: #E2E8F0;
-  color: #94A3B8;
-  box-shadow: none;
-  cursor: not-allowed;
-  transform: none;
+    background: #E2E8F0;
+    color: #94A3B8;
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
 }
 
 /* Smooth Icon Animation */
@@ -787,4 +795,45 @@ button {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+.app-footer {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 1.5rem;
+}
+
+.footer-content {
+    max-width: 800px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+@media (min-width: 600px) {
+    .footer-content {
+        flex-direction: row;
+        justify-content: space-between;
+    }
+}
+
+.footer-links {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.footer-links a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+
+.footer-links a:hover {
+    color: var(--primary-hover);
+    text-decoration: underline;
 }
