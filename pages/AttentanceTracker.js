@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Script from "next/script";
 import Link from "next/link";
-import { BarcodeDetector } from "barcode-detector/ponyfill";
 
 const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
 
@@ -34,7 +33,9 @@ export default function AttendanceTracker() {
     const overlayCanvasRef = useRef(null);
     const isScanningRef = useRef(false);
     const detectionCountRef = useRef({});
-    const detectorRef = useRef(null);
+
+    const workersRef = useRef([]);
+    const workerIndexRef = useRef(0);
 
     // ==========================================
     // GOOGLE API INITIALIZATION
@@ -227,55 +228,40 @@ export default function AttendanceTracker() {
     }, []);
 
     const scanFrame = useCallback(async function loopScan() {
-        if (!isScanningRef.current || !videoRef.current || !overlayCanvasRef.current || !detectorRef.current) return;
+        if (!isScanningRef.current || !videoRef.current)
+            return;
 
         const video = videoRef.current;
-        const overlayCanvas = overlayCanvasRef.current;
-        const overlayCtx = overlayCanvas.getContext("2d");
-
-        if (video.videoWidth > 0 && overlayCanvas.width !== video.videoWidth) {
-            overlayCanvas.width = video.videoWidth;
-            overlayCanvas.height = video.videoHeight;
-        }
 
         try {
-            const barcodes = await detectorRef.current.detect(video);
-            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+            const targetWidth = 960;
+            const scale = targetWidth / video.videoWidth;
+            const targetHeight = Math.floor(video.videoHeight * scale);
 
-            if (barcodes && barcodes.length > 0) {
-                const barcode = barcodes[0]; 
+            const offscreen = new OffscreenCanvas(targetWidth, targetHeight);
+            const ctx = offscreen.getContext("2d");
 
-                // --- DETECTION LOGIC ---
-                const code = barcode.rawValue;
-                const now = Date.now();
+            ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
 
-                if (!detectionCountRef.current[code]) {
-                    detectionCountRef.current[code] = { count: 0, firstDetected: now };
-                }
-                detectionCountRef.current[code].count++;
+            const bitmap = await createImageBitmap(offscreen);
 
-                if (detectionCountRef.current[code].count >= 2) {
-                    if (navigator.vibrate) try { navigator.vibrate([100, 50, 100]); } catch (_) { }
+            const worker = workersRef.current[
+                workerIndexRef.current
+            ];
 
-                    stopCamera();
-                    processBarcodeData(code);
-                    detectionCountRef.current = {};
-                }
-            }
-
-            const cutoff = Date.now() - 2000;
-            Object.keys(detectionCountRef.current).forEach(c => {
-                if (detectionCountRef.current[c].firstDetected < cutoff) {
-                    delete detectionCountRef.current[c];
-                }
-            });
-
-        } catch (error) {
-            console.error("Barcode detection failed:", error);
+            workerIndexRef.current = (workerIndexRef.current + 1) % workersRef.current.length;
+            
+            worker.postMessage(
+                { frame: bitmap },
+                [bitmap]
+            );
+        } catch (err) {
+            console.error("Frame pipeline error:", err);
         }
 
-        if (isScanningRef.current) setTimeout(loopScan, 120);
-    }, [processBarcodeData, stopCamera]);
+        if (isScanningRef.current)
+            requestAnimationFrame(loopScan);
+    }, []);
 
     const setupPinchToZoom = useCallback((track) => {
         const container = document.getElementById("scanner-container");
@@ -375,15 +361,64 @@ export default function AttendanceTracker() {
     }, [step, startCamera, stopCamera]);
 
     useEffect(() => {
-        try {
-            detectorRef.current = new BarcodeDetector({ formats: ["code_39"] });
-            
+        try {            
             if (window.gapi && window.google)
                 initGoogleApi();
         } catch (err) {
             console.error("BarcodeDetector initialization failed:", err);
         }
     }, [initGoogleApi]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+
+        const workerCount = 2;
+
+        workersRef.current = Array.from({ length: workerCount }, () => {
+            const worker = new Worker(
+                new URL("../worker/worker.js", import.meta.url),
+                { type: "module" }
+            );
+
+            worker.onmessage = (e) => {
+                const data = e.data;
+
+                if (data.error) {
+                    console.error("Worker error:", data.error);
+                    return;
+                }
+
+                if (data.found) {
+                    const code = data.rawValue;
+                    const now = Date.now();
+
+                    if (!detectionCountRef.current[code]) {
+                        detectionCountRef.current[code] = {
+                            count: 0,
+                            firstDetected: now
+                        };
+                    }
+
+                    detectionCountRef.current[code].count++;
+
+                    if (detectionCountRef.current[code].count >= 2) {
+
+                        if (navigator.vibrate) {
+                            try { navigator.vibrate([100,50,100]); } catch {}
+                        }
+                        stopCamera();
+                        processBarcodeData(code);
+                        detectionCountRef.current = {};
+                    }
+                }
+            };
+            return worker;
+        });
+
+        return () => {
+            workersRef.current.forEach(w => w.terminate());
+        };
+    }, [processBarcodeData, stopCamera]);
 
     // ==========================================
     // RENDER UI
