@@ -1,21 +1,16 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import Script from "next/script";
+import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email";
-
 export default function AttendanceTracker() {
+    const { data: session, status } = useSession();
+    
     // --- UI State ---
     const [step, setStep] = useState(1);
-    const [loadingMsg, setLoadingMsg] = useState("Waiting for Google API...");
+    const [loadingMsg, setLoadingMsg] = useState("");
     const [errorMsg, setErrorMsg] = useState(null);
-
-    // --- Auth & User State ---
-    const [tokenClient, setTokenClient] = useState(null);
-    const [accessToken, setAccessToken] = useState(null);
-    const [userInfo, setUserInfo] = useState(null);
 
     // --- Sheets State ---
     const [availableSheets, setAvailableSheets] = useState([]);
@@ -38,88 +33,39 @@ export default function AttendanceTracker() {
     const workerIndexRef = useRef(0);
 
     // ==========================================
-    // GOOGLE API INITIALIZATION
+    // AUTHENTICATION ROUTING
     // ==========================================
-    const fetchUserInfo = useCallback(async (token) => {
+    useEffect(() => {
+        if (status === "authenticated" && session?.accessToken) {
+            setStep(2);
+            fetchUserSheets(session.accessToken);
+        } else if (status === "unauthenticated") {
+            setStep(1);
+        }
+    }, [status, session]);
+
+    // ==========================================
+    // SHEETS LOGIC (Using Native Fetch + NextAuth)
+    // ==========================================
+    const fetchUserSheets = async (token) => {
+        setLoadingMsg('Loading your spreadsheets...');
         try {
-            const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            const response = await fetch("https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.spreadsheet'", {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            const data = await res.json();
-            setUserInfo(data);
-            setStep(2);
-            fetchUserSheets();
-        } catch (err) {
-            setErrorMsg("Failed to fetch user info.");
-        }
-    }, []);
+            const data = await response.json();
+            
+            if (data.error) throw new Error(data.error.message);
 
-    const initGoogleApi = useCallback(() => {
-        setLoadingMsg("Initializing Google API...");
-        try {
-            window.gapi.load("client", async () => {
-                await window.gapi.client.init({
-                    apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
-                    discoveryDocs: [
-                        "https://sheets.googleapis.com/$discovery/rest?version=v4",
-                        "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest",
-                    ],
-                });
-
-                const client = window.google.accounts.oauth2.initTokenClient({
-                    client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
-                    scope: SCOPES,
-                    callback: (tokenResponse) => {
-                        if (tokenResponse && tokenResponse.access_token) {
-                            setAccessToken(tokenResponse.access_token);
-                            fetchUserInfo(tokenResponse.access_token);
-                            setErrorMsg(null);
-                        }
-                    },
-                    error_callback: (error) => {
-                        console.error("Auth error:", error);
-                        setErrorMsg("Authentication failed.");
-                    }
-                });
-
-                setTokenClient(client);
-                setLoadingMsg(null);
-            });
-        } catch (err) {
-            setErrorMsg("Error loading Google API: " + err.message);
-            setLoadingMsg(null);
-        }
-    }, [fetchUserInfo]);
-
-    const handleAuthClick = () => {
-        if (tokenClient) tokenClient.requestAccessToken();
-    };
-
-    const handleSignOut = () => {
-        if (accessToken) {
-            window.google.accounts.oauth2.revoke(accessToken, () => {
-                setAccessToken(null);
-                setUserInfo(null);
-                setStep(1);
-            });
-        }
-    };
-
-    // ==========================================
-    // SHEETS LOGIC
-    // ==========================================
-    const fetchUserSheets = () => {
-        setLoadingMsg("Loading your spreadsheets...");
-        window.gapi.client.drive.files.list({
-            pageSize: 15,
-            fields: "nextPageToken, files(id, name, modifiedTime)",
-            q: "mimeType='application/vnd.google-apps.spreadsheet'"
-        }).then((response) => {
-            const files = response.result.files || [];
+            const files = data.files || [];
             files.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
             setAvailableSheets(files);
             setLoadingMsg(null);
-        });
+        } catch (error) {
+            console.error("Failed to fetch sheets", error);
+            setErrorMsg("Failed to load spreadsheets.");
+            setLoadingMsg(null);
+        }
     };
 
     const handleSheetSelection = (e) => {
@@ -128,28 +74,31 @@ export default function AttendanceTracker() {
         if (sheetId) fetchSheetTabs(sheetId);
     };
 
-    const fetchSheetTabs = (sheetId) => {
+    const fetchSheetTabs = async (sheetId) => {
         setLoadingMsg("Loading section tabs...");
-        window.gapi.client.sheets.spreadsheets.get({ spreadsheetId: sheetId }).then(response => {
-            const sheets = response.result.sheets;
+        try {
+            const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`, {
+                headers: { Authorization: `Bearer ${session.accessToken}` }
+            });
+            const data = await response.json();
+
+            if (data.error) throw new Error(data.error.message);
+
             const ignore = ["Instructions", "Summary", "Testing Center"];
-            const tabs = sheets
+            const tabs = data.sheets
                 .map(s => s.properties.title)
                 .filter(title => !ignore.includes(title));
 
             setAvailableTabs(tabs);
             setLoadingMsg(null);
-        }).catch(err => {
+        } catch (err) {
             setErrorMsg("Error loading tabs: " + err.message);
             setLoadingMsg(null);
-        });
+        }
     };
 
     const startAttendance = () => {
-        if (!selectedTab) {
-            alert("Please select a section");
-            return;
-        }
+        if (!selectedTab) return alert("Please select a section");
         setStep(3);
     };
 
@@ -158,26 +107,23 @@ export default function AttendanceTracker() {
         const cleanId = manualId.trim();
         if (!cleanId) return;
         
-        stopCamera(); // Stop the camera if they use the manual fallback
+        stopCamera(); 
         processBarcodeData(cleanId);
-        setManualId(""); // Clear the input field
+        setManualId(""); 
     };
 
-    // ==========================================
-    // SHEETS DATA PROCESSING
-    // ==========================================
     const processBarcodeData = useCallback(async (studentId) => {
         setCameraMsg(`Checking student ID: ${studentId}`);
 
         try {
-            const response = await window.gapi.client.sheets.spreadsheets.values.get({
-                spreadsheetId: selectedSheetId,
-                // Update 1: Expand search range to Column D
-                range: `${selectedTab}!A:D` 
+            // 1. Get the current sheet data
+            const getRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${selectedSheetId}/values/${selectedTab}!A:D`, {
+                headers: { Authorization: `Bearer ${session.accessToken}` }
             });
+            const getData = await getRes.json();
+            const rows = getData.values || [];
 
-            const rows = response.result.values;
-            if (rows && rows.length > 0) {
+            if (rows.length > 0) {
                 let studentFound = false;
                 let studentName = "";
                 let rowIndex = -1;
@@ -186,23 +132,26 @@ export default function AttendanceTracker() {
                     if (rows[i].length > 1 && rows[i][1] === studentId) {
                         studentFound = true;
                         studentName = rows[i][0] || "Unknown Student";
-                        rowIndex = i + 1;
+                        rowIndex = i + 1; // Google Sheets is 1-indexed
                         break;
                     }
                 }
 
                 if (studentFound) {
-                    // Update 2: Generate a localized timestamp
                     const timestamp = new Date().toLocaleString();
 
-                    await window.gapi.client.sheets.spreadsheets.values.update({
-                        spreadsheetId: selectedSheetId,
-                        // Update 3: Target columns C through D for the specific row
-                        range: `${selectedTab}!C${rowIndex}:D${rowIndex}`,
-                        valueInputOption: "USER_ENTERED",
-                        // Update 4: Send both "Present" and the timestamp side-by-side
-                        resource: { values: [["Present", timestamp]] } 
+                    // 2. Write the "Present" status and timestamp back to the sheet
+                    const putRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${selectedSheetId}/values/${selectedTab}!C${rowIndex}:D${rowIndex}?valueInputOption=USER_ENTERED`, {
+                        method: 'PUT',
+                        headers: { 
+                            'Authorization': `Bearer ${session.accessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ values: [["Present", timestamp]] })
                     });
+
+                    if (!putRes.ok) throw new Error("Failed to write to sheet");
+
                     setScanResult({ found: true, name: studentName, id: studentId });
                 } else {
                     setScanResult({ found: false, name: "", id: studentId });
@@ -214,7 +163,7 @@ export default function AttendanceTracker() {
             console.error(err);
             setCameraMsg("Error accessing Google Sheet.");
         }
-    }, [selectedSheetId, selectedTab]);
+    }, [selectedSheetId, selectedTab, session]);
 
     // ==========================================
     // SCANNER & CAMERA LOGIC
@@ -228,8 +177,7 @@ export default function AttendanceTracker() {
     }, []);
 
     const scanFrame = useCallback(async function loopScan() {
-        if (!isScanningRef.current || !videoRef.current)
-            return;
+        if (!isScanningRef.current || !videoRef.current || workersRef.current.length === 0) return;
 
         const video = videoRef.current;
 
@@ -242,25 +190,19 @@ export default function AttendanceTracker() {
             const ctx = offscreen.getContext("2d");
 
             ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
-
             const bitmap = await createImageBitmap(offscreen);
 
-            const worker = workersRef.current[
-                workerIndexRef.current
-            ];
-
+            const worker = workersRef.current[workerIndexRef.current];
             workerIndexRef.current = (workerIndexRef.current + 1) % workersRef.current.length;
             
-            worker.postMessage(
-                { frame: bitmap },
-                [bitmap]
-            );
+            worker.postMessage({ frame: bitmap }, [bitmap]);
         } catch (err) {
-            console.error("Frame pipeline error:", err);
+            // Silently catch errors if the video frame isn't ready yet
         }
 
-        if (isScanningRef.current)
+        if (isScanningRef.current) {
             requestAnimationFrame(loopScan);
+        }
     }, []);
 
     const setupPinchToZoom = useCallback((track) => {
@@ -322,25 +264,16 @@ export default function AttendanceTracker() {
                 videoRef.current.srcObject = stream;
                 videoRef.current.onloadedmetadata = async () => {
                     videoRef.current.play();
-                    
                     const track = stream.getVideoTracks()[0];
                     
-                    // --- NEW AUTOFOCUS LOGIC ---
-                    // Try to force continuous autofocus if the hardware supports it
                     try {
                         const capabilities = track.getCapabilities();
                         if (capabilities.focusMode && capabilities.focusMode.includes("continuous")) {
-                            await track.applyConstraints({
-                                advanced: [{ focusMode: "continuous" }]
-                            });
-                            console.log("Continuous autofocus enabled.");
-                        } else {
-                            console.warn("Continuous autofocus not supported on this device.");
+                            await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
                         }
                     } catch (e) {
-                        console.warn("Autofocus constraint not supported on this device.", e);
+                        console.warn("Autofocus constraint not supported.", e);
                     }
-                    // ---------------------------
 
                     setupPinchToZoom(track);
                     setCameraMsg("Position barcode inside the frame or manually enter the ID below.");
@@ -355,57 +288,29 @@ export default function AttendanceTracker() {
         }
     }, [scanFrame, setupPinchToZoom]);
 
-    useEffect(() => {
-        if (step === 3) startCamera();
-        return () => stopCamera(); 
-    }, [step, startCamera, stopCamera]);
-
-    useEffect(() => {
-        try {            
-            if (window.gapi && window.google)
-                initGoogleApi();
-        } catch (err) {
-            console.error("BarcodeDetector initialization failed:", err);
-        }
-    }, [initGoogleApi]);
-
+    // --- Web Worker Initialization ---
     useEffect(() => {
         if (typeof window === "undefined") return;
 
         const workerCount = 2;
-
         workersRef.current = Array.from({ length: workerCount }, () => {
-            const worker = new Worker(
-                new URL("../worker/worker.js", import.meta.url),
-                { type: "module" }
-            );
+            const worker = new Worker(new URL("../worker/worker.js", import.meta.url), { type: "module" });
 
             worker.onmessage = (e) => {
                 const data = e.data;
-
-                if (data.error) {
-                    console.error("Worker error:", data.error);
-                    return;
-                }
+                if (data.error) return;
 
                 if (data.found) {
                     const code = data.rawValue;
                     const now = Date.now();
 
                     if (!detectionCountRef.current[code]) {
-                        detectionCountRef.current[code] = {
-                            count: 0,
-                            firstDetected: now
-                        };
+                        detectionCountRef.current[code] = { count: 0, firstDetected: now };
                     }
-
                     detectionCountRef.current[code].count++;
 
                     if (detectionCountRef.current[code].count >= 2) {
-
-                        if (navigator.vibrate) {
-                            try { navigator.vibrate([100,50,100]); } catch {}
-                        }
+                        if (navigator.vibrate) { try { navigator.vibrate([100,50,100]); } catch {} }
                         stopCamera();
                         processBarcodeData(code);
                         detectionCountRef.current = {};
@@ -420,25 +325,26 @@ export default function AttendanceTracker() {
         };
     }, [processBarcodeData, stopCamera]);
 
+    useEffect(() => {
+        if (step === 3) startCamera();
+        return () => stopCamera(); 
+    }, [step, startCamera, stopCamera]);
+
     // ==========================================
     // RENDER UI
     // ==========================================
     return (
         <div className="layout-wrapper">
-            <Script src="https://accounts.google.com/gsi/client" strategy="lazyOnload" />
-            <Script src="https://apis.google.com/js/api.js" strategy="lazyOnload" onLoad={initGoogleApi} />
-
-            {/* Header */}
             <header className="app-header">
                 <div className="header-content">
                     <div className="logo-group">
                         <svg className="icon-logo" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
                         <h1>OTU Attendance</h1>
                     </div>
-                    {userInfo && (
+                    {session && (
                         <div className="user-badge">
-                            <span className="user-email">{userInfo.email}</span>
-                            <button onClick={handleSignOut} className="btn-icon" title="Sign Out">
+                            <span className="user-email">{session.user.email}</span>
+                            <button onClick={() => signOut()} className="btn-icon" title="Sign Out">
                                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                             </button>
                         </div>
@@ -449,13 +355,13 @@ export default function AttendanceTracker() {
             <main className="main-content">
                 <div className="glass-card fade-in">
                     
-                    {/* Loading & Errors */}
-                    {loadingMsg && step != 2 && (
+                    {loadingMsg && step !== 2 && (
                         <div className="state-container">
                             <div className="spinner"></div>
                             <p className="state-text">{loadingMsg}</p>
                         </div>
                     )}
+                    
                     {errorMsg && (
                         <div className="alert-error">
                             <svg className="icon-alert" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -463,7 +369,6 @@ export default function AttendanceTracker() {
                         </div>
                     )}
 
-                    {/* STEP 1: AUTHENTICATION */}
                     {step === 1 && !loadingMsg && (
                         <div className="step-content">
                             <div className="step-header">
@@ -471,14 +376,13 @@ export default function AttendanceTracker() {
                                 <h2>Authentication</h2>
                             </div>
                             <p className="subtitle">Sign in with your Google account.</p>
-                            <button onClick={handleAuthClick} className="btn-primary btn-large">
+                            <button onClick={() => signIn("google")} className="btn-primary btn-large">
                                 <svg className="icon-google" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" /><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" /></svg>
                                 Continue with Google
                             </button>
                         </div>
                     )}
 
-                    {/* STEP 2: SHEET SELECTION */}
                     {step === 2 && (
                         <div className="step-content">
                             <div className="step-header">
@@ -531,8 +435,6 @@ export default function AttendanceTracker() {
                                 className="btn-launch btn-large mt-4"
                             >
                                 <span>Scan</span>
-                                
-                                {/* Custom Barcode/Viewfinder Icon */}
                                 <svg className="icon-launch" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8V6a2 2 0 012-2h3m10 0h3a2 2 0 012 2v2M3 16v2a2 2 0 002 2h3m10 0h3a2 2 0 002-2v-2m-8-4h.01M12 12h.01M8 12h.01M16 12h.01" />
                                 </svg>
@@ -540,7 +442,6 @@ export default function AttendanceTracker() {
                         </div>
                     )}
 
-                    {/* STEP 3: SCANNER */}
                     {step === 3 && (
                         <div className="step-content scanner-layout">
                             <div className="scanner-header">
@@ -562,11 +463,9 @@ export default function AttendanceTracker() {
                                             autoPlay 
                                             playsInline
                                             onClick={async () => {
-                                                // Trigger manual focus when the user taps the video
                                                 if (videoRef.current && videoRef.current.srcObject) {
                                                     const track = videoRef.current.srcObject.getVideoTracks()[0];
                                                     try {
-                                                        // Applying an empty advanced constraint often forces the OS to re-meter focus and exposure
                                                         await track.applyConstraints({ advanced: [{}] });
                                                         setCameraMsg("Focusing...");
                                                         setTimeout(() => setCameraMsg("Position barcode inside the frame."), 1000);
@@ -578,7 +477,6 @@ export default function AttendanceTracker() {
                                         
                                         {zoomLevel > 1 && <div id="zoom-indicator">{zoomLevel.toFixed(1)}x Zoom</div>}
                                         
-                                        {/* Modern Camera Viewfinder Overlay */}
                                         <div className="camera-overlay">
                                             <div className="viewfinder">
                                                 <div className="corner top-left"></div>
@@ -614,7 +512,6 @@ export default function AttendanceTracker() {
                                 </div>
                             )}
 
-                            {/* RESULTS DISPLAY */}
                             {scanResult && (
                                 <div className={`result-card ${scanResult.found ? "success" : "error"} slide-up`}>
                                     <div className="result-icon">
@@ -641,7 +538,6 @@ export default function AttendanceTracker() {
                 <div className="footer-content">
                     <p>&copy; {new Date().getFullYear()} OTU Attendance</p>
                     <div className="footer-links">
-                        {/* Make sure these paths match your file names (pages/privacy.js & pages/terms.js) */}
                         <Link href="/privacy">Privacy Policy</Link>
                         <Link href="/terms">Terms of Service</Link>
                     </div>
