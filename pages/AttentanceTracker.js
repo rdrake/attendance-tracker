@@ -33,139 +33,6 @@ export default function AttendanceTracker() {
     const workerIndexRef = useRef(0);
 
     // ==========================================
-    // AUTHENTICATION ROUTING
-    // ==========================================
-    useEffect(() => {
-        if (status === "authenticated" && session?.accessToken) {
-            setStep(2);
-            fetchUserSheets(session.accessToken);
-        } else if (status === "unauthenticated") {
-            setStep(1);
-        }
-    }, [status, session]);
-
-    // ==========================================
-    // SHEETS LOGIC (Using Native Fetch + NextAuth)
-    // ==========================================
-    const fetchUserSheets = async (token) => {
-        setLoadingMsg('Loading your spreadsheets...');
-        try {
-            const response = await fetch("https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.spreadsheet'", {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            const data = await response.json();
-            
-            if (data.error) throw new Error(data.error.message);
-
-            const files = data.files || [];
-            files.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
-            setAvailableSheets(files);
-            setLoadingMsg(null);
-        } catch (error) {
-            console.error("Failed to fetch sheets", error);
-            setErrorMsg("Failed to load spreadsheets.");
-            setLoadingMsg(null);
-        }
-    };
-
-    const handleSheetSelection = (e) => {
-        const sheetId = e.target.value;
-        setSelectedSheetId(sheetId);
-        if (sheetId) fetchSheetTabs(sheetId);
-    };
-
-    const fetchSheetTabs = async (sheetId) => {
-        setLoadingMsg("Loading section tabs...");
-        try {
-            const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`, {
-                headers: { Authorization: `Bearer ${session.accessToken}` }
-            });
-            const data = await response.json();
-
-            if (data.error) throw new Error(data.error.message);
-
-            const ignore = ["Instructions", "Summary", "Testing Center"];
-            const tabs = data.sheets
-                .map(s => s.properties.title)
-                .filter(title => !ignore.includes(title));
-
-            setAvailableTabs(tabs);
-            setLoadingMsg(null);
-        } catch (err) {
-            setErrorMsg("Error loading tabs: " + err.message);
-            setLoadingMsg(null);
-        }
-    };
-
-    const startAttendance = () => {
-        if (!selectedTab) return alert("Please select a section");
-        setStep(3);
-    };
-
-    const handleManualSubmit = (e) => {
-        e.preventDefault();
-        const cleanId = manualId.trim();
-        if (!cleanId) return;
-        
-        stopCamera(); 
-        processBarcodeData(cleanId);
-        setManualId(""); 
-    };
-
-    const processBarcodeData = useCallback(async (studentId) => {
-        setCameraMsg(`Checking student ID: ${studentId}`);
-
-        try {
-            // 1. Get the current sheet data
-            const getRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${selectedSheetId}/values/${selectedTab}!A:D`, {
-                headers: { Authorization: `Bearer ${session.accessToken}` }
-            });
-            const getData = await getRes.json();
-            const rows = getData.values || [];
-
-            if (rows.length > 0) {
-                let studentFound = false;
-                let studentName = "";
-                let rowIndex = -1;
-
-                for (let i = 0; i < rows.length; i++) {
-                    if (rows[i].length > 1 && rows[i][1] === studentId) {
-                        studentFound = true;
-                        studentName = rows[i][0] || "Unknown Student";
-                        rowIndex = i + 1; // Google Sheets is 1-indexed
-                        break;
-                    }
-                }
-
-                if (studentFound) {
-                    const timestamp = new Date().toLocaleString();
-
-                    // 2. Write the "Present" status and timestamp back to the sheet
-                    const putRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${selectedSheetId}/values/${selectedTab}!C${rowIndex}:D${rowIndex}?valueInputOption=USER_ENTERED`, {
-                        method: 'PUT',
-                        headers: { 
-                            'Authorization': `Bearer ${session.accessToken}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ values: [["Present", timestamp]] })
-                    });
-
-                    if (!putRes.ok) throw new Error("Failed to write to sheet");
-
-                    setScanResult({ found: true, name: studentName, id: studentId });
-                } else {
-                    setScanResult({ found: false, name: "", id: studentId });
-                }
-            } else {
-                setCameraMsg("No data found in the sheet.");
-            }
-        } catch (err) {
-            console.error(err);
-            setCameraMsg("Error accessing Google Sheet.");
-        }
-    }, [selectedSheetId, selectedTab, session]);
-
-    // ==========================================
     // SCANNER & CAMERA LOGIC
     // ==========================================
     const stopCamera = useCallback(() => {
@@ -288,6 +155,143 @@ export default function AttendanceTracker() {
         }
     }, [scanFrame, setupPinchToZoom]);
 
+    // ==========================================
+    // SHEETS LOGIC (Using Native Fetch + NextAuth)
+    // ==========================================
+    const fetchUserSheets = async (token) => {
+        setLoadingMsg('Loading your spreadsheets...');
+        try {
+            const response = await fetch("https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.spreadsheet'", {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            if (response.status === 401) {
+                signOut();
+                return;
+            }
+            const data = await response.json();
+            
+            if (data.error) throw new Error(data.error.message);
+
+            const files = data.files || [];
+            files.sort((a, b) => new Date(b.modifiedTime) - new Date(a.modifiedTime));
+            setAvailableSheets(files);
+            setLoadingMsg(null);
+        } catch (error) {
+            console.error("Failed to fetch sheets", error);
+            setErrorMsg("Failed to load spreadsheets.");
+            setLoadingMsg(null);
+        }
+    };
+
+    const handleSheetSelection = (e) => {
+        const sheetId = e.target.value;
+        setSelectedSheetId(sheetId);
+        if (sheetId) fetchSheetTabs(sheetId);
+    };
+
+    const fetchSheetTabs = async (sheetId) => {
+        setLoadingMsg("Loading section tabs...");
+        try {
+            const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`, {
+                headers: { Authorization: `Bearer ${session.accessToken}` }
+            });
+
+            if (response.status === 401) {
+                signOut();
+                return;
+            }
+            const data = await response.json();
+
+            if (data.error) throw new Error(data.error.message);
+
+            const ignore = ["Instructions", "Summary", "Testing Center"];
+            const tabs = data.sheets
+                .map(s => s.properties.title)
+                .filter(title => !ignore.includes(title));
+
+            setAvailableTabs(tabs);
+            setLoadingMsg(null);
+        } catch (err) {
+            setErrorMsg("Error loading tabs: " + err.message);
+            setLoadingMsg(null);
+        }
+    };
+
+    const startAttendance = () => {
+        if (!selectedTab) return alert("Please select a section");
+        setStep(3);
+    };
+
+    const handleManualSubmit = (e) => {
+        e.preventDefault();
+        const cleanId = manualId.trim();
+        if (!cleanId) return;
+        
+        stopCamera(); 
+        processBarcodeData(cleanId);
+        setManualId(""); 
+    };
+
+    const processBarcodeData = useCallback(async (studentId) => {
+        setCameraMsg(`Checking student ID: ${studentId}`);
+
+        try {
+            // 1. Get the current sheet data
+            const getRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${selectedSheetId}/values/${selectedTab}!A:D`, {
+                headers: { Authorization: `Bearer ${session.accessToken}` }
+            });
+            
+            if (getRes.status === 401) {
+                stopCamera();
+                signOut();
+                return;
+            }
+            const getData = await getRes.json();
+            const rows = getData.values || [];
+
+            if (rows.length > 0) {
+                let studentFound = false;
+                let studentName = "";
+                let rowIndex = -1;
+
+                for (let i = 0; i < rows.length; i++) {
+                    if (rows[i].length > 1 && rows[i][1] === studentId) {
+                        studentFound = true;
+                        studentName = rows[i][0] || "Unknown Student";
+                        rowIndex = i + 1; // Google Sheets is 1-indexed
+                        break;
+                    }
+                }
+
+                if (studentFound) {
+                    const timestamp = new Date().toLocaleString();
+
+                    // 2. Write the "Present" status and timestamp back to the sheet
+                    const putRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${selectedSheetId}/values/${selectedTab}!C${rowIndex}:D${rowIndex}?valueInputOption=USER_ENTERED`, {
+                        method: 'PUT',
+                        headers: { 
+                            'Authorization': `Bearer ${session.accessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ values: [["Present", timestamp]] })
+                    });
+
+                    if (!putRes.ok) throw new Error("Failed to write to sheet");
+
+                    setScanResult({ found: true, name: studentName, id: studentId });
+                } else {
+                    setScanResult({ found: false, name: "", id: studentId });
+                }
+            } else {
+                setCameraMsg("No data found in the sheet.");
+            }
+        } catch (err) {
+            console.error(err);
+            setCameraMsg("Error accessing Google Sheet.");
+        }
+    }, [selectedSheetId, selectedTab, session, stopCamera]);
+
     // --- Web Worker Initialization ---
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -324,6 +328,18 @@ export default function AttendanceTracker() {
             workersRef.current.forEach(w => w.terminate());
         };
     }, [processBarcodeData, stopCamera]);
+
+    // ==========================================
+    // AUTHENTICATION ROUTING
+    // ==========================================
+    useEffect(() => {
+        if (status === "authenticated" && session?.accessToken) {
+            setStep(2);
+            fetchUserSheets(session.accessToken);
+        } else if (status === "unauthenticated") {
+            setStep(1);
+        }
+    }, [status, session]);
 
     useEffect(() => {
         if (step === 3) startCamera();
